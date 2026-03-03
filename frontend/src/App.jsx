@@ -9,15 +9,51 @@ import SmartDashboard from './components/SmartDashboard';
 import FileManagement from './components/FileManagement';
 import LoadingScreen from './components/LoadingScreen';
 
+// Error Boundary to prevent white screen on React errors
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('React Error Boundary caught:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: 'center', color: '#fff', background: '#1e1b4b', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div>
+            <h2>Xəta baş verdi</h2>
+            <p style={{ opacity: 0.7 }}>{this.state.error?.message || 'Bilinməyən xəta'}</p>
+            <button onClick={() => { localStorage.removeItem('access_token'); window.location.href = '/login'; }}
+              style={{ marginTop: 16, padding: '10px 24px', borderRadius: 8, background: '#6366f1', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              Yenidən giriş
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, checkAuth } = useAuthStore();
-  const [checking, setChecking] = React.useState(true);
+  const [checking, setChecking] = React.useState(!isAuthenticated);
 
   React.useEffect(() => {
-    // Always check auth status on mount
+    // If already authenticated (from token in localStorage), skip API check
+    if (isAuthenticated) {
+      setChecking(false);
+      return;
+    }
+    // Otherwise verify with server
     checkAuth().finally(() => setChecking(false));
-  }, [checkAuth]);
+  }, [checkAuth, isAuthenticated]);
 
   if (checking) {
     return <LoadingScreen />;
@@ -41,6 +77,7 @@ function App() {
   }, []);
 
   return (
+    <ErrorBoundary>
     <Router>
       <Toaster
         position="top-right"
@@ -104,6 +141,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>
+    </ErrorBoundary>
   );
 }
 
