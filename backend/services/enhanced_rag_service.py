@@ -6,7 +6,7 @@ import json
 import re
 from typing import Optional, List, Dict
 from openai import OpenAI, RateLimitError
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from services.file_processor import FileProcessor
 from services.intelligent_keyword_extractor import IntelligentKeywordExtractor
