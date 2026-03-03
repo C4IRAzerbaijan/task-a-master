@@ -24,7 +24,7 @@ const Login = () => {
         navigate('/dashboard');
       }, 100);
     } else {
-      toast.error(result.error);
+      toast.error(typeof result.error === 'string' ? result.error : 'Giriş xətası');
     }
   };
 
@@ -90,7 +90,7 @@ const Login = () => {
             {error && (
               <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 flex items-center space-x-2">
                 <AlertCircle className="w-5 h-5 text-red-300 flex-shrink-0" />
-                <p className="text-red-200 text-sm">{error}</p>
+                <p className="text-red-200 text-sm">{typeof error === 'string' ? error : (error?.message || JSON.stringify(error))}</p>
               </div>
             )}
 
