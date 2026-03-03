@@ -1,20 +1,13 @@
 {
-  "version": 2,
-  "framework": null,
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
-  "rewrites": [
-    { "source": "/api/:match*", "destination": "/api/index.py" },
-    { "source": "/((?!api).*)", "destination": "/index.html" }
-  ],
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Accept, Authorization" }
-      ]
+  "functions": {
+    "api/index.py": {
+      "excludeFiles": "{backend/chroma_db/**,backend/flask_session/**,backend/documents/**,backend/__pycache__/**,backend/services/__pycache__/**,backend/utils/__pycache__/**,chroma_db/**,documents/**,flask_session/**,frontend/**,.git/**}"
     }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
