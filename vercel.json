@@ -2,7 +2,7 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
   "functions": {
-    "Task-A-master/api/index.py": {
+    "/api/index.py": {
       "excludeFiles": "{backend/chroma_db/**,backend/flask_session/**,backend/documents/**,backend/__pycache__/**,backend/services/__pycache__/**,backend/utils/__pycache__/**,chroma_db/**,documents/**,flask_session/**,frontend/**,.git/**}"
     }
   },
