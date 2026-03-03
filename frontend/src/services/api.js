@@ -12,9 +12,13 @@ const api = axios.create({
   },
 });
 
-// Request interceptor
+// Request interceptor - attach JWT token
 api.interceptors.request.use(
   (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     console.log('API Request:', config.method?.toUpperCase(), config.url);
     return config;
   },
@@ -32,7 +36,8 @@ api.interceptors.response.use(
   (error) => {
     console.error('API Error:', error.response?.status, error.config?.url, error.message);
     if (error.response?.status === 401) {
-      // Handle unauthorized - redirect to login
+      // Handle unauthorized - clear token and redirect to login
+      localStorage.removeItem('access_token');
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -43,15 +48,22 @@ api.interceptors.response.use(
 export const authService = {
   login: async (username, password) => {
     const response = await api.post('/api/auth/login', { username, password });
+    if (response.data.access_token) {
+      localStorage.setItem('access_token', response.data.access_token);
+    }
     return response.data;
   },
   
   register: async (username, password, email) => {
     const response = await api.post('/api/auth/register', { username, password, email });
+    if (response.data.access_token) {
+      localStorage.setItem('access_token', response.data.access_token);
+    }
     return response.data;
   },
   
   logout: async () => {
+    localStorage.removeItem('access_token');
     const response = await api.post('/api/auth/logout');
     return response.data;
   },
