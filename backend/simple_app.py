@@ -63,9 +63,32 @@ def create_simple_app():
          methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
     )
     
-    # Create directories
-    os.makedirs('documents', exist_ok=True)
-    os.makedirs('chroma_db', exist_ok=True)
+    # Global error handler - always return JSON (critical for debugging on Vercel)
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        import traceback
+        print(f"UNHANDLED ERROR: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'error': str(e),
+            'type': type(e).__name__
+        }), 500
+    
+    @app.errorhandler(404)
+    def handle_404(e):
+        return jsonify({'error': 'Endpoint not found', 'path': request.path}), 404
+    
+    @app.errorhandler(405)
+    def handle_405(e):
+        return jsonify({'error': 'Method not allowed', 'method': request.method, 'path': request.path}), 405
+    
+    # Create directories - use /tmp on Vercel (only writable directory)
+    if is_vercel:
+        os.makedirs('/tmp/documents', exist_ok=True)
+        os.makedirs('/tmp/chroma_db', exist_ok=True)
+    else:
+        os.makedirs('documents', exist_ok=True)
+        os.makedirs('chroma_db', exist_ok=True)
     
     # Initialize services with enhanced versions
     from config import get_config
@@ -1588,11 +1611,12 @@ Linkə klikləyərək şablonu kompüterinizə yükləyə bilərsiniz."""
     
     return app, db_manager, rag_service, chat_service
 
-# Create the application instance for Gunicorn / Vercel
-app, db_manager, rag_service, chat_service = create_simple_app()
+# Only create app at module level when running directly (not when imported by api/index.py)
+# api/index.py calls create_simple_app() itself
+if os.getenv('VERCEL') != '1':
+    app, db_manager, rag_service, chat_service = create_simple_app()
 
-# Serve React Frontend (only when not on Vercel - Vercel serves static files separately)
-if not os.getenv('VERCEL'):
+    # Serve React Frontend (local development only)
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve(path):
