@@ -49,11 +49,7 @@ def create_simple_app():
             cors_origins.append(f'https://{vercel_project_url}')
     
     CORS(app, 
-<<<<<<< HEAD
          origins=cors_origins,
-=======
-            origins=cors_origins,
->>>>>>> a96768cba1f59d17b37dfe10d6407034f07f4f94
          supports_credentials=True,
          allow_headers=['Content-Type', 'Accept', 'Authorization'],
          methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']

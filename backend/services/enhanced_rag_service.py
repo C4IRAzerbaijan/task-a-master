@@ -12,18 +12,12 @@ from services.file_processor import FileProcessor
 from services.intelligent_keyword_extractor import IntelligentKeywordExtractor
 from services.improved_document_matching import ImprovedDocumentMatcher
 
-<<<<<<< HEAD
 # Conditional import - HuggingFace embeddings only available when
 # sentence-transformers and torch are installed
 try:
     from langchain_community.embeddings import HuggingFaceEmbeddings
 except (ImportError, ModuleNotFoundError):
     HuggingFaceEmbeddings = None
-=======
-# Lazy import: HuggingFaceEmbeddings requires torch/sentence-transformers
-# Only import when actually needed (i.e. not using OpenAI embeddings)
-HuggingFaceEmbeddings = None
->>>>>>> a96768cba1f59d17b37dfe10d6407034f07f4f94
 
 
 class _OpenAIResponseCompat:
@@ -95,18 +89,12 @@ class EnhancedRAGServiceV2:
         if embedding_model.startswith("text-embedding-"):
             self.embeddings = _OpenAIEmbeddingsCompat(self.openai_client, embedding_model)
         else:
-<<<<<<< HEAD
             if HuggingFaceEmbeddings is None:
                 raise ImportError(
                     "HuggingFace embeddings require 'sentence-transformers' and 'torch'. "
                     "Install them or set EMBEDDING_MODEL=text-embedding-3-small to use OpenAI."
                 )
             self.embeddings = HuggingFaceEmbeddings(
-=======
-            # Lazy import to avoid requiring torch on serverless
-            from langchain_community.embeddings import HuggingFaceEmbeddings as _HFEmbed
-            self.embeddings = _HFEmbed(
->>>>>>> a96768cba1f59d17b37dfe10d6407034f07f4f94
                 model_name=embedding_model or 'sentence-transformers/all-MiniLM-L6-v2'
             )
         

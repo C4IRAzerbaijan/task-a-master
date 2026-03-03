@@ -1,6 +1,5 @@
 {
   "version": 2,
-<<<<<<< HEAD
   "framework": null,
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
@@ -19,19 +18,3 @@
     }
   ]
 }
-=======
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "api/index.py"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
-  ]
-}
->>>>>>> a96768cba1f59d17b37dfe10d6407034f07f4f94

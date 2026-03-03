@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Dependencies
 node_modules/
 venv/
@@ -35,39 +34,6 @@ backend/test_*.py
 backend/check_*.py
 backend/process_one.py
 Dockerfile
+.dockerignore
 *.md
 !README.md
-=======
-# Version control
-.git
-.gitignore
-.DS_Store
-
-# Docker (not needed on Vercel)
-Dockerfile
-.dockerignore
-
-# Documentation
-README.md
-README.vercel.md
-GEMINI_FREE_UPDATE.md
-INTEGRATION_STATUS.md
-
-# Cache & temp
-**/__pycache__
-**/.pytest_cache
-*.pyc
-
-# Test files
-backend/test_*.py
-backend/check_*.py
-backend/process_one.py
-
-# Frontend source (built via @vercel/static-build)
-# frontend/src
-# frontend/node_modules
-
-# Python virtual env (should not be committed but just in case)
-venv
-.venv
->>>>>>> a96768cba1f59d17b37dfe10d6407034f07f4f94
