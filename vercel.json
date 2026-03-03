@@ -4,7 +4,7 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
   "functions": {
-    "api/**/*.py": {
+    "api/*.py": {
       "runtime": "python@3.12.0"
     }
   },
