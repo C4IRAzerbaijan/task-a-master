@@ -62,14 +62,18 @@ const useAuthStore = create((set, get) => ({
       
       return { success: true };
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Giriş xətası';
+      const rawError = error.response?.data?.error;
+      const errorMessage = (typeof rawError === 'string' ? rawError : null)
+        || error.response?.data?.message
+        || error.message
+        || 'Giriş xətası';
       set({ 
-        error: errorMessage, 
+        error: String(errorMessage), 
         isLoading: false,
         isAuthenticated: false,
         user: null
       });
-      return { success: false, error: errorMessage };
+      return { success: false, error: String(errorMessage) };
     }
   },
 
@@ -88,14 +92,18 @@ const useAuthStore = create((set, get) => ({
       
       return { success: true };
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Qeydiyyat xətası';
+      const rawError = error.response?.data?.error;
+      const errorMessage = (typeof rawError === 'string' ? rawError : null)
+        || error.response?.data?.message
+        || error.message
+        || 'Qeydiyyat xətası';
       set({ 
-        error: errorMessage, 
+        error: String(errorMessage), 
         isLoading: false,
         isAuthenticated: false,
         user: null
       });
-      return { success: false, error: errorMessage };
+      return { success: false, error: String(errorMessage) };
     }
   },
 
