@@ -3,23 +3,38 @@
 import os
 import json
 from typing import Optional, List, Dict
-import pandas as pd
-import pdfplumber
-import pypdf
+
+# All heavy imports are conditional to avoid crashing on Vercel
+# if a dependency has compatibility issues
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 # PDF Libraries
 PDF_LIBRARY = None
+pdfplumber = None
+pypdf = None
 try:
     import pdfplumber
     PDF_LIBRARY = 'pdfplumber'
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     try:
         import pypdf
         PDF_LIBRARY = 'pypdf'
-    except ImportError:
+    except (ImportError, ModuleNotFoundError):
         print("⚠️ PDF kitabxanası tapılmadı!")
 
-import docx  # python-docx
-import openpyxl
+try:
+    import docx  # python-docx
+except (ImportError, ModuleNotFoundError):
+    docx = None
+
+try:
+    import openpyxl
+except (ImportError, ModuleNotFoundError):
+    openpyxl = None
 
 class FileProcessor:
     """Process different types of files and extract text"""
