@@ -2,9 +2,48 @@
 import { create } from 'zustand';
 import { authService } from '../services/api';
 
+// Decode JWT payload without verification (just to read claims client-side)
+function decodeToken(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64));
+    // Check expiry
+    if (payload.exp && payload.exp * 1000 < Date.now()) {
+      return null; // expired
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// Initialize auth state from stored token (synchronous, no API call needed)
+function getInitialAuthState() {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    const payload = decodeToken(token);
+    if (payload) {
+      return {
+        user: {
+          id: payload.user_id,
+          username: payload.username,
+          role: payload.role || 'user'
+        },
+        isAuthenticated: true
+      };
+    }
+    // Token exists but invalid/expired - clean up
+    localStorage.removeItem('access_token');
+  }
+  return { user: null, isAuthenticated: false };
+}
+
+const initialAuth = getInitialAuthState();
+
 const useAuthStore = create((set, get) => ({
-  user: null,
-  isAuthenticated: false,
+  user: initialAuth.user,
+  isAuthenticated: initialAuth.isAuthenticated,
   isLoading: false,
   error: null,
 
@@ -78,6 +117,24 @@ const useAuthStore = create((set, get) => ({
   },
 
   checkAuth: async () => {
+    // First: check if we have a valid token locally (instant, no API call)
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      const payload = decodeToken(token);
+      if (payload) {
+        const user = {
+          id: payload.user_id,
+          username: payload.username,
+          role: payload.role || 'user'
+        };
+        set({ user, isAuthenticated: true, isLoading: false });
+        return true;
+      }
+      // Token expired/invalid - clean up
+      localStorage.removeItem('access_token');
+    }
+
+    // No valid token - try server session (for local dev with filesystem sessions)
     try {
       const data = await authService.checkAuth();
       
