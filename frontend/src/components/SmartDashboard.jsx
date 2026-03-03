@@ -14,6 +14,15 @@ import ReactMarkdown from 'react-markdown';
 const SmartDashboard = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+
+  // Ensure values rendered in JSX are always strings
+  const safeString = (val) => {
+    if (val == null) return '';
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object') return val.message || val.error || JSON.stringify(val);
+    return String(val);
+  };
+
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -178,6 +187,9 @@ const SmartDashboard = () => {
   };
 
   const renderMessageWithDownloadLinks = (content) => {
+    if (!content || typeof content !== 'string') {
+      return <p>{safeString(content)}</p>;
+    }
     const downloadLinks = parseDownloadLinks(content);
     
     // Remove download links from content for clean markdown rendering
@@ -227,7 +239,7 @@ const SmartDashboard = () => {
         // Need document selection
         const clarificationMessage = {
           type: 'system',
-          content: response.message,
+          content: safeString(response.message),
           documents: response.available_documents,
           timestamp: new Date().toISOString()
         };
@@ -236,7 +248,7 @@ const SmartDashboard = () => {
         // Got answer (general or document-based)
         const botMessage = {
           type: 'bot',
-          content: response.answer,
+          content: safeString(response.answer),
           document: response.document_used,
           responseType: response.type,
           timestamp: new Date().toISOString()
@@ -257,7 +269,7 @@ const SmartDashboard = () => {
     } catch (error) {
       const errorMessage = {
         type: 'error',
-        content: error.response?.data?.error || 'Xəta baş verdi',
+        content: safeString(error.response?.data?.error) || 'Xəta baş verdi',
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -270,8 +282,8 @@ const SmartDashboard = () => {
     try {
       const data = await chatService.getConversation(conv.id);
       const loadedMessages = data.messages.flatMap(msg => [
-        { type: 'user', content: msg.question, timestamp: msg.timestamp },
-        { type: 'bot', content: msg.answer, timestamp: msg.timestamp }
+        { type: 'user', content: safeString(msg.question), timestamp: msg.timestamp },
+        { type: 'bot', content: safeString(msg.answer), timestamp: msg.timestamp }
       ]);
       setMessages(loadedMessages);
       setCurrentConversation(conv);
@@ -341,7 +353,7 @@ const SmartDashboard = () => {
 
         const botMessage = {
           type: 'bot',
-          content: response.answer,
+          content: safeString(response.answer),
           document: response.document_used,
           responseType: response.type,
           timestamp: new Date().toISOString()
@@ -480,7 +492,7 @@ const SmartDashboard = () => {
                         className="flex items-center justify-between"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="truncate">{conv.title}</div>
+                          <div className="truncate">{safeString(conv.title)}</div>
                           <div className="text-xs text-gray-500">
                             {conv.message_count} mesaj
                           </div>
@@ -582,9 +594,9 @@ const SmartDashboard = () => {
                               </div>
                             </div>
                           ) : msg.type === 'bot' ? (
-                            renderMessageWithDownloadLinks(msg.content)
+                            renderMessageWithDownloadLinks(safeString(msg.content))
                           ) : (
-                            <p>{msg.content}</p>
+                            <p>{safeString(msg.content)}</p>
                           )}
                         </div>
                       </div>
