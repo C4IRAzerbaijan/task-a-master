@@ -5,9 +5,25 @@ import time
 import json
 import re
 from typing import Optional, List, Dict
-from openai import OpenAI, RateLimitError
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+
+# Heavy/external imports - all conditional to survive broken packages on Vercel
+try:
+    from openai import OpenAI, RateLimitError
+except (ImportError, ModuleNotFoundError) as _e:
+    print(f"WARNING: openai import failed: {_e}")
+    OpenAI = None
+    RateLimitError = Exception
+
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except (ImportError, ModuleNotFoundError):
+    RecursiveCharacterTextSplitter = None
+
+try:
+    from langchain_community.vectorstores import Chroma
+except (ImportError, ModuleNotFoundError):
+    Chroma = None
+
 from services.file_processor import FileProcessor
 from services.intelligent_keyword_extractor import IntelligentKeywordExtractor
 from services.improved_document_matching import ImprovedDocumentMatcher
