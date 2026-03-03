@@ -10,7 +10,10 @@ from flask_session import Session
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import re
-import jwt as pyjwt
+try:
+    import jwt as pyjwt
+except ImportError:
+    pyjwt = None
 
 # Import utilities
 from utils.database import DatabaseManager
@@ -106,6 +109,8 @@ def create_simple_app():
     # ============= JWT TOKEN HELPERS =============
     def create_auth_token(user_id, username, role):
         """Create a JWT token for stateless authentication (Vercel serverless)"""
+        if pyjwt is None:
+            return None
         payload = {
             'user_id': user_id,
             'username': username,
@@ -117,6 +122,8 @@ def create_simple_app():
     
     def get_token_identity():
         """Extract user identity from JWT token in Authorization header"""
+        if pyjwt is None:
+            return None
         auth_header = request.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
             token = auth_header[7:]
