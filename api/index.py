@@ -31,3 +31,5 @@ except Exception as e:
             'detail': str(e),
             'type': type(e).__name__
         }), 500
+
+handler = app
