@@ -29,7 +29,6 @@ def create_simple_app():
     
     # Configuration
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
-    app.config['SESSION_TYPE'] = 'null' if is_vercel else 'filesystem'
     app.config['SESSION_PERMANENT'] = False
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     app.config['SESSION_COOKIE_NAME'] = 'rag_session'
@@ -40,7 +39,12 @@ def create_simple_app():
     # Initialize extensions
     cors_origins_env = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
     cors_origins = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
-    Session(app)
+    
+    # Only use flask-session for local dev (filesystem sessions)
+    # On Vercel, use default Flask cookie sessions + JWT tokens
+    if not is_vercel:
+        app.config['SESSION_TYPE'] = 'filesystem'
+        Session(app)
     
     # CORS - include Vercel deployment URLs
     cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
