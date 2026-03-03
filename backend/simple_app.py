@@ -10,6 +10,7 @@ from flask_session import Session
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import re
+import jwt as pyjwt
 
 # Import utilities
 from utils.database import DatabaseManager
@@ -102,20 +103,62 @@ def create_simple_app():
     except:
         pass
     
+    # ============= JWT TOKEN HELPERS =============
+    def create_auth_token(user_id, username, role):
+        """Create a JWT token for stateless authentication (Vercel serverless)"""
+        payload = {
+            'user_id': user_id,
+            'username': username,
+            'role': role,
+            'exp': datetime.now(timezone.utc) + timedelta(hours=24),
+            'iat': datetime.now(timezone.utc)
+        }
+        return pyjwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    
+    def get_token_identity():
+        """Extract user identity from JWT token in Authorization header"""
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+            try:
+                payload = pyjwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+                return payload
+            except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
+                return None
+        return None
+    
     # ============= AUTH DECORATORS =============
     def login_required(f):
-        """Decorator to require login"""
+        """Decorator to require login - supports both JWT and session"""
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            # Try JWT token first (for serverless/Vercel)
+            identity = get_token_identity()
+            if identity:
+                session['user_id'] = identity['user_id']
+                session['username'] = identity['username']
+                session['role'] = identity.get('role', 'user')
+                return f(*args, **kwargs)
+            # Fall back to session (local development)
             if 'user_id' not in session:
                 return jsonify({'error': 'Authentication required'}), 401
             return f(*args, **kwargs)
         return decorated_function
     
     def admin_required(f):
-        """Decorator to require admin role"""
+        """Decorator to require admin role - supports both JWT and session"""
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            # Try JWT token first
+            identity = get_token_identity()
+            if identity:
+                if identity.get('role') != 'admin':
+                    return jsonify({'error': 'Admin access required'}), 403
+                session['user_id'] = identity['user_id']
+                session['username'] = identity['username']
+                session['role'] = identity['role']
+                return f(*args, **kwargs)
+            # Fall back to session
             if 'user_id' not in session:
                 return jsonify({'error': 'Authentication required'}), 401
             if session.get('role') != 'admin':
@@ -158,8 +201,12 @@ def create_simple_app():
             session['role'] = 'user'
             session.permanent = True
             
+            # Create JWT token for stateless auth (Vercel)
+            access_token = create_auth_token(user_id, username, 'user')
+            
             return jsonify({
                 'message': 'Qeydiyyat uğurlu',
+                'access_token': access_token,
                 'user': {
                     'id': user_id,
                     'username': username,
@@ -193,8 +240,12 @@ def create_simple_app():
             session['role'] = user['role']
             session.permanent = True
             
+            # Create JWT token for stateless auth (Vercel)
+            access_token = create_auth_token(user['id'], user['username'], user['role'])
+            
             return jsonify({
                 'message': 'Giriş uğurlu',
+                'access_token': access_token,
                 'user': {
                     'id': user['id'],
                     'username': user['username'],
@@ -214,7 +265,20 @@ def create_simple_app():
     
     @app.route('/api/auth/check', methods=['GET'])
     def check_auth():
-        """Check authentication status"""
+        """Check authentication status - supports both JWT and session"""
+        # Try JWT token first (for serverless/Vercel)
+        identity = get_token_identity()
+        if identity:
+            return jsonify({
+                'authenticated': True,
+                'user': {
+                    'id': identity['user_id'],
+                    'username': identity['username'],
+                    'role': identity.get('role', 'user')
+                }
+            })
+        
+        # Fall back to session (local development)
         if 'user_id' in session:
             return jsonify({
                 'authenticated': True,
