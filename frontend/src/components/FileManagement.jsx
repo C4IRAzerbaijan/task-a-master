@@ -220,7 +220,8 @@ const FileManagement = () => {
       setUploadData({ file: null, documentType: 'other', isTemplate: false });
     } catch (error) {
       console.error('Upload error:', error);
-      toast.error(error.response?.data?.error || 'Yükləmədə xətası');
+      const errMsg = error.response?.data?.error;
+      toast.error(typeof errMsg === 'string' ? errMsg : 'Yükləmədə xətası');
     } finally {
       setIsLoading(false);
     }
@@ -344,11 +345,12 @@ const FileManagement = () => {
         
         await loadDocuments();
       } else {
-        toast.error(data.error || 'Reprocess xətası');
+        const errMsg = data.error;
+        toast.error(typeof errMsg === 'string' ? errMsg : 'Reprocess xətası');
       }
     } catch (error) {
       console.error('Reprocess error:', error);
-      toast.error('İşləmə xətası: ' + error.message);
+      toast.error('İşləmə xətası: ' + (error.message || ''));
     } finally {
       setReprocessingDocs(prev => {
         const newSet = new Set(prev);
@@ -377,13 +379,14 @@ const FileManagement = () => {
       const data = await response.json();
       
       if (response.ok) {
-        toast.success(data.message || 'Bütün sənədlər işləndi');
+        toast.success(typeof data.message === 'string' ? data.message : 'Bütün sənədlər işləndi');
         await loadDocuments();
       } else {
-        toast.error(data.error || 'Bulk reprocess xətası');
+        const errMsg = data.error;
+        toast.error(typeof errMsg === 'string' ? errMsg : 'Bulk reprocess xətası');
       }
     } catch (error) {
-      toast.error('Bulk reprocess xətası: ' + error.message);
+      toast.error('Bulk reprocess xətası: ' + (error.message || ''));
     } finally {
       setIsLoading(false);
     }
