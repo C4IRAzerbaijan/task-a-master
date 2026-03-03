@@ -3,11 +3,6 @@
   "framework": null,
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
-  "functions": {
-    "api/index.py": {
-      "runtime": "python@3.12.0"
-    }
-  },
   "rewrites": [
     { "source": "/api/:match*", "destination": "/api/index.py" }
   ],
