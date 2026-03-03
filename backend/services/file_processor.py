@@ -5,15 +5,16 @@ import json
 from typing import Optional, List, Dict
 import pandas as pd
 import pdfplumber
-import PyPDF2
+import pypdf
 # PDF Libraries
 PDF_LIBRARY = None
 try:
-    
+    import pdfplumber
     PDF_LIBRARY = 'pdfplumber'
 except ImportError:
     try:
-        PDF_LIBRARY = 'pypdf2'
+        import pypdf
+        PDF_LIBRARY = 'pypdf'
     except ImportError:
         print("⚠️ PDF kitabxanası tapılmadı!")
 
@@ -60,8 +61,8 @@ class FileProcessor:
         
         if self.pdf_library == 'pdfplumber':
             return self._extract_with_pdfplumber(file_path)
-        elif self.pdf_library == 'pypdf2':
-            return self._extract_with_pypdf2(file_path)
+        elif self.pdf_library == 'pypdf':
+            return self._extract_with_pypdf(file_path)
         
         return ""
     
@@ -88,11 +89,11 @@ class FileProcessor:
         
         return "\n".join(text_parts)
     
-    def _extract_with_pypdf2(self, file_path: str) -> str:
-        """Extract with PyPDF2"""
+    def _extract_with_pypdf(self, file_path: str) -> str:
+        """Extract with pypdf"""
         text_parts = []
         with open(file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
+            pdf_reader = pypdf.PdfReader(file)
             for page_num in range(len(pdf_reader.pages)):
                 page = pdf_reader.pages[page_num]
                 page_text = page.extract_text()
