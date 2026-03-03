@@ -3,10 +3,13 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
+// Detect if running on the same origin (Vercel) or cross-origin (local dev)
+const isLocalDev = API_BASE_URL && API_BASE_URL.includes('localhost');
+
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: API_BASE_URL,  // /api path-ini silək
-  withCredentials: true,
+  baseURL: API_BASE_URL,
+  withCredentials: isLocalDev,  // Only send cookies for local dev (cross-origin sessions)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -36,9 +39,13 @@ api.interceptors.response.use(
   (error) => {
     console.error('API Error:', error.response?.status, error.config?.url, error.message);
     if (error.response?.status === 401) {
-      // Handle unauthorized - clear token and redirect to login
-      localStorage.removeItem('access_token');
-      window.location.href = '/login';
+      // Don't redirect for auth endpoints - let the component handle the error
+      const url = error.config?.url || '';
+      const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register');
+      if (!isAuthEndpoint) {
+        localStorage.removeItem('access_token');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
