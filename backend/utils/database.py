@@ -51,6 +51,7 @@ class DatabaseManager:
                     file_type TEXT,
                     uploaded_by INTEGER NOT NULL,
                     is_processed BOOLEAN DEFAULT FALSE,
+                    is_blob_storage BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (uploaded_by) REFERENCES users (id)
                 )
@@ -162,13 +163,13 @@ class DatabaseManager:
     
     def create_document(self, filename: str, original_name: str, 
                        file_path: str, file_size: int, file_type: str,
-                       uploaded_by: int) -> int:
+                       uploaded_by: int, is_blob_storage: bool = False) -> int:
         """Create a document record"""
         return self.execute_query(
             '''INSERT INTO documents 
-               (filename, original_name, file_path, file_size, file_type, uploaded_by) 
-               VALUES (?, ?, ?, ?, ?, ?)''',
-            (filename, original_name, file_path, file_size, file_type, uploaded_by)
+               (filename, original_name, file_path, file_size, file_type, uploaded_by, is_blob_storage) 
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (filename, original_name, file_path, file_size, file_type, uploaded_by, is_blob_storage)
         )
     
     def update_document_processed(self, doc_id: int, processed: bool = True) -> None:
