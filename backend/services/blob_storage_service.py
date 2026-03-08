@@ -11,8 +11,8 @@ class BlobStorageService:
     
     def __init__(self, config):
         self.config = config
-        self.blob_enabled = os.getenv('VERCEL_BLOB_TOKEN', '') != ''
-        self.blob_token = os.getenv('VERCEL_BLOB_TOKEN', '')
+        self.blob_enabled = os.getenv('BLOB_READ_WRITE_TOKEN', '') != ''
+        self.blob_token = os.getenv('BLOB_READ_WRITE_TOKEN', '')
         self.blob_api_url = 'https://blob.vercel-storage.com'
         
         if self.blob_enabled:
@@ -110,3 +110,4 @@ class BlobStorageService:
         except Exception as e:
             print(f"Blob stream error: {str(e)}")
             return None
+
