@@ -9,11 +9,14 @@ def enhance_rag_with_contact_search(rag_service_instance):
     original = rag_service_instance.answer_question
     # Find the contacts.db file - check multiple possible locations
     possible_paths = [
-        os.path.join(os.path.dirname(os.getcwd()), 'contacts.db'),  # Parent directory (preferred)
+        '/tmp/contacts.db',  # Vercel Lambda (restored from Blob Storage on startup)
+        os.path.join(os.path.dirname(__file__), '..', 'contacts.db'),  # backend/contacts.db (local)
+        os.path.join(os.path.dirname(os.getcwd()), 'contacts.db'),  # Parent directory
         os.path.join(os.path.dirname(os.path.dirname(__file__)), 'contacts.db'),  # Project root
         os.path.join(os.getcwd(), 'contacts.db'),  # Current directory (last resort)
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'contacts.db')  # Two levels up
     ]
+    # Normalise paths so os.path.exists works reliably
+    possible_paths = [os.path.normpath(p) for p in possible_paths]
     
     db_path = None
     for path in possible_paths:
