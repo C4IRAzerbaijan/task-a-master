@@ -462,88 +462,61 @@ def create_simple_app():
                 'type': 'document_answer'
             })
         
-        # Check for template requests - delegate to enhanced chat service
-        question_lower = question.lower()
-        template_indicators = ['şablon', 'shablon', 'nümunə', 'numune', 'template', 'yüklə', 'yukle', 'download', 'link']
-        is_template_request = any(indicator in question_lower for indicator in template_indicators)
-        
-        if is_template_request:
-            # Use enhanced template search from chat service
-            template_match = chat_service.find_template_by_keywords(question)
-            
-            if template_match:
-                template_doc = template_match['document']
-                template_info = template_match['template_info']
-                
-                download_url = f"http://localhost:5000/api/documents/{template_doc['id']}/download"
-                
-                answer = f"""**📄 {template_info['template_name']} şablonu tapıldı!**
+        # Check for document download requests - always delegate to chat service
+        # (intent detection is done inside find_template_by_keywords itself)
+        template_match = chat_service.find_template_by_keywords(question)
 
-**📥 Yükləmə linki:** [Bu linkə klikləyin]({download_url})
+        if template_match:
+            template_doc = template_match['document']
+            display_name = template_match.get('doc_display_name',
+                re.sub(r'\.[^.]+$', '', template_doc['original_name']).replace('_', ' '))
 
-**ℹ️ Fayl məlumatları:**
-• **Fayl adı:** {template_doc['original_name']}
-• **Fayl tipi:** {template_doc['file_type']}
-• **Ölçü:** {template_doc['file_size']} bayt
+            # Build a download URL that works in any environment
+            base = request.url_root.rstrip('/')
+            download_url = f"{base}/api/documents/{template_doc['id']}/download"
 
-Linkə klikləyərək şablonu kompüterinizə yükləyə bilərsiniz."""
-                
-                message = {
-                    'question': question,
-                    'answer': answer,
-                    'document_id': template_doc['id'],
-                    'document_name': template_doc['original_name'],
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                }
-                
-                if not conversation_id:
-                    title = f"Şablon: {question[:30]}..."
-                    conversation_id = db_manager.create_conversation(
-                        user_id=session['user_id'],
-                        document_id=template_doc['id'],
-                        title=title,
-                        messages=json.dumps([message])
-                    )
-                else:
-                    conv = db_manager.get_conversation(conversation_id, session['user_id'])
-                    if conv:
-                        messages = json.loads(conv['messages'])
-                        messages.append(message)
-                        db_manager.update_conversation(conversation_id, json.dumps(messages))
-                
-                return jsonify({
-                    'answer': answer,
-                    'conversation_id': conversation_id,
-                    'document_used': {
-                        'id': template_doc['id'],
-                        'name': template_doc['original_name']
-                    },
-                    'type': 'template_download'
-                })
+            size_kb = round((template_doc.get('file_size') or 0) / 1024, 1)
+            size_str = f"{size_kb} KB" if size_kb >= 1 else f"{template_doc.get('file_size', 0)} bayt"
+
+            answer = (
+                f"**📄 {display_name}**\n\n"
+                f"**[⬇️ Faylı yüklə]({download_url})**\n\n"
+                f"| | |\n|---|---|\n"
+                f"| Fayl adı | `{template_doc['original_name']}` |\n"
+                f"| Növ | {template_doc.get('file_type', '—')} |\n"
+                f"| Ölçü | {size_str} |\n\n"
+                f"Linki klikləyərək faylı kompüterinizə yükləyə bilərsiniz."
+            )
+
+            message = {
+                'question': question,
+                'answer': answer,
+                'document_id': template_doc['id'],
+                'document_name': template_doc['original_name'],
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+
+            if not conversation_id:
+                conversation_id = db_manager.create_conversation(
+                    user_id=session['user_id'],
+                    document_id=template_doc['id'],
+                    title=f"Fayl: {question[:40]}",
+                    messages=json.dumps([message])
+                )
             else:
-                # No template found - provide helpful message
-                answer = f"**Axtardığınız şablon tapılmadı.** 😔\n\nSistemdə mövcud şablonları görmək üçün admin ilə əlaqə saxlayın və ya \"sənədlər\" yazaraq bütün yüklənmiş faylları görə bilərsiniz."
-                
-                message = {
-                    'question': question,
-                    'answer': answer,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                }
-                
-                if not conversation_id:
-                    title = f"Şablon axtarışı: {question[:30]}..."
-                    conversation_id = db_manager.create_conversation(
-                        user_id=session['user_id'],
-                        document_id=None,
-                        title=title,
-                        messages=json.dumps([message])
-                    )
-                
-                return jsonify({
-                    'answer': answer,
-                    'conversation_id': conversation_id,
-                    'type': 'template_not_found'
-                })
+                conv = db_manager.get_conversation(conversation_id, session['user_id'])
+                if conv:
+                    msgs = json.loads(conv['messages'])
+                    msgs.append(message)
+                    db_manager.update_conversation(conversation_id, json.dumps(msgs))
+
+            return jsonify({
+                'answer': answer,
+                'conversation_id': conversation_id,
+                'document_used': {'id': template_doc['id'], 'name': template_doc['original_name']},
+                'download_url': download_url,
+                'type': 'template_download'
+            })
         
         # USE CONTEXT-AWARE CHAT SERVICE
         print("Using context-aware chat service...")
