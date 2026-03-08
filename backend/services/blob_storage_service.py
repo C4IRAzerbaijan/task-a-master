@@ -33,8 +33,7 @@ class BlobStorageService:
         headers = {
             'Authorization': f'Bearer {self.blob_token}',
             'Content-Type': 'application/octet-stream',
-            'x-api-version': '7',
-            'x-vercel-blob-access': 'public',
+            'x-vercel-blob-access': 'private',
         }
         if add_random_suffix:
             headers['x-add-random-suffix'] = '1'
@@ -44,19 +43,21 @@ class BlobStorageService:
             data=data,
             timeout=60,
         )
+        print(f"📊 Blob PUT status: {response.status_code}")
+        print(f"📋 Blob PUT raw response: {response.text[:500]}")
         if response.status_code in (200, 201):
             try:
                 resp_data = response.json()
             except Exception:
-                print(f"⚠️ Blob PUT: could not parse JSON response: {response.text[:200]}")
+                print(f"⚠️ Blob PUT: could not parse JSON response")
                 return None
-            print(f"📋 Blob PUT response keys: {list(resp_data.keys())}")
-            # Vercel may return 'url', 'downloadUrl', or neither when pathname is used
-            url = (
-                resp_data.get('url')
-                or resp_data.get('downloadUrl', '').split('?')[0]
-                or resp_data.get('pathname', '')
-            )
+            # Safely extract URL from any field Vercel might use
+            url = resp_data.get('url') or ''
+            if not url:
+                dl = resp_data.get('downloadUrl') or ''
+                url = dl.split('?')[0] if dl else ''
+            if not url:
+                url = resp_data.get('pathname') or ''
             if url:
                 return url
             print(f"⚠️ Blob PUT succeeded but no URL in response: {resp_data}")
@@ -156,7 +157,8 @@ class BlobStorageService:
             return None
         try:
             print(f"📥 Downloading from Blob: {blob_url[:60]}...")
-            response = requests.get(blob_url, timeout=30)
+            dl_headers = {'Authorization': f'Bearer {self.blob_token}'} if self.blob_token else {}
+            response = requests.get(blob_url, headers=dl_headers, timeout=30)
             if response.status_code == 200:
                 print(f"✅ Downloaded {len(response.content)} bytes")
                 return response.content
@@ -171,7 +173,8 @@ class BlobStorageService:
         if not blob_url:
             return None
         try:
-            response = requests.get(blob_url, timeout=30, stream=True)
+            dl_headers = {'Authorization': f'Bearer {self.blob_token}'} if self.blob_token else {}
+            response = requests.get(blob_url, headers=dl_headers, timeout=30, stream=True)
             if response.status_code == 200:
                 return BytesIO(response.content)
             return None
