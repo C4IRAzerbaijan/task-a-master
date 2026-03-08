@@ -33,9 +33,11 @@ class BlobStorageService:
         headers = {
             'Authorization': f'Bearer {self.blob_token}',
             'Content-Type': 'application/octet-stream',
+            'x-api-version': '7',
             'x-vercel-blob-access': 'public',
-            'x-add-random-suffix': '1' if add_random_suffix else '0',
         }
+        if add_random_suffix:
+            headers['x-add-random-suffix'] = '1'
         response = requests.put(
             f'https://blob.vercel-storage.com/{blob_path}',
             headers=headers,
