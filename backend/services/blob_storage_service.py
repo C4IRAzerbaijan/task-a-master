@@ -40,6 +40,7 @@ class BlobStorageService:
                 'Authorization': f'Bearer {self.blob_token}',
                 'Content-Type': 'application/octet-stream',
                 'x-add-random-suffix': '1',
+                'x-vercel-blob-access': 'private',
             }
             
             url = f'https://blob.vercel-storage.com/{filename}'
@@ -115,7 +116,8 @@ class BlobStorageService:
         
         try:
             print(f"📥 Downloading from Blob: {blob_url[:60]}...")
-            response = requests.get(blob_url, timeout=30)
+            headers = {'Authorization': f'Bearer {self.blob_token}'} if self.blob_token else {}
+            response = requests.get(blob_url, headers=headers, timeout=30)
             if response.status_code == 200:
                 print(f"✅ Downloaded {len(response.content)} bytes")
                 return response.content
@@ -132,7 +134,8 @@ class BlobStorageService:
             return None
         
         try:
-            response = requests.get(blob_url, timeout=30, stream=True)
+            headers = {'Authorization': f'Bearer {self.blob_token}'} if self.blob_token else {}
+            response = requests.get(blob_url, headers=headers, timeout=30, stream=True)
             if response.status_code == 200:
                 return BytesIO(response.content)
             return None
