@@ -142,6 +142,32 @@ class EnhancedRAGServiceV2:
         except:
             pass  # Column already exists
     
+    def process_document_from_bytes(self, file_content: bytes, doc_id: int, filename: str) -> bool:
+        """Process document from bytes (for Vercel Blob Storage)"""
+        import tempfile
+        import os as os_module
+        
+        try:
+            # Save bytes to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os_module.path.splitext(filename)[1]) as tmp_file:
+                tmp_file.write(file_content)
+                tmp_file_path = tmp_file.name
+            
+            # Process the temporary file
+            result = self.process_document(tmp_file_path, doc_id)
+            
+            # Clean up temporary file
+            try:
+                os_module.remove(tmp_file_path)
+            except:
+                pass
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error processing document from bytes: {e}")
+            return False
+    
     def process_document(self, file_path: str, doc_id: int) -> bool:
         """Process document with intelligent keyword extraction"""
         try:
