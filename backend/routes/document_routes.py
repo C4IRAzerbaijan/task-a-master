@@ -78,12 +78,11 @@ def init_document_routes(db_manager, rag_service, config, blob_storage=None):
             filename = secure_filename(file.filename)
             file_type = processor.get_file_type(filename)
             
-            # Determine storage method based on environment
-            is_vercel = os.getenv('VERCEL', '') == '1'
+            # Use Blob Storage whenever it is configured, regardless of environment
             blob_url = None
             local_file_path = None
             
-            if is_vercel and blob_storage:
+            if blob_storage and blob_storage.blob_enabled:
                 # Use Blob Storage on Vercel
                 unique_filename = f"{uuid.uuid4()}_{filename}"
                 success, result = blob_storage.upload_file(file, unique_filename)
