@@ -92,6 +92,7 @@ class EnhancedRAGServiceV2:
     def __init__(self, config, db_manager):
         self.config = config
         self.db_manager = db_manager
+        self.blob_storage = None  # type: ignore  # injected externally after construction
         
         # Initialize improved document matcher
         self.document_matcher = ImprovedDocumentMatcher(db_manager)
@@ -249,6 +250,10 @@ class EnhancedRAGServiceV2:
                 "UPDATE documents SET is_processed = TRUE WHERE id = ?",
                 (doc_id,)
             )
+
+            # Persist ChromaDB to Blob Storage so it survives across Lambda invocations
+            if self.blob_storage and self.blob_storage.blob_enabled:
+                self.blob_storage.sync_chroma_to_blob(doc_id, vector_db_path)
             
             print(f"Successfully processed document: {doc_name}")
             return True
@@ -386,8 +391,17 @@ class EnhancedRAGServiceV2:
             )
             
             if not os.path.exists(vector_db_path):
-                print(f"Vector DB not found: {vector_db_path}")
-                return None
+                print(f"Vector DB not found locally: {vector_db_path}")
+                # Try to restore from Blob Storage (Vercel ephemeral filesystem)
+                if self.blob_storage and self.blob_storage.blob_enabled:
+                    print(f"Attempting to restore ChromaDB for doc_{doc_id} from Blob...")
+                    restored = self.blob_storage.sync_chroma_from_blob(doc_id, vector_db_path)
+                    if not restored or not os.path.exists(vector_db_path):
+                        print(f"ChromaDB restore failed for doc_{doc_id}")
+                        return None
+                    print(f"ChromaDB for doc_{doc_id} restored successfully")
+                else:
+                    return None
             
             # Load vector store
             vector_store = Chroma(
