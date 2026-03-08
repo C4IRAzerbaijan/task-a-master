@@ -35,20 +35,16 @@ class BlobStorageService:
             
             print(f"📤 Uploading {filename} ({file_size} bytes) to Vercel Blob...")
             
-            # Vercel Blob API - use the proper endpoint
-            # The token itself contains the URL, or we construct it properly
+            # Vercel Blob REST API: PUT https://blob.vercel-storage.com/{filename}
             headers = {
                 'Authorization': f'Bearer {self.blob_token}',
                 'Content-Type': 'application/octet-stream',
+                'x-add-random-suffix': '1',
             }
             
-            # Method 1: Direct upload to Vercel Blob API endpoint
-            url = 'https://blob.vercel-storage.com/upload'
+            url = f'https://blob.vercel-storage.com/{filename}'
             
-            # Send as raw bytes with filename in header
-            headers['X-Vercel-Blob-Filename'] = filename
-            
-            response = requests.post(
+            response = requests.put(
                 url,
                 headers=headers,
                 data=file_content,
@@ -89,22 +85,15 @@ class BlobStorageService:
                 'Authorization': f'Bearer {self.blob_token}',
             }
             
-            # Extract pathname from blob URL if it's a full URL
-            if blob_url.startswith('http'):
-                # blob_url is like: https://xxxx.public.blob.vercel-storage.com/path
-                # We need to send to delete endpoint with the pathname
-                from urllib.parse import urlparse
-                parsed = urlparse(blob_url)
-                pathname = parsed.path
-            else:
-                pathname = blob_url
+            # Vercel Blob REST API: DELETE https://blob.vercel-storage.com with {"urls": [...]}
+            delete_url = 'https://blob.vercel-storage.com'
+            headers['Content-Type'] = 'application/json'
             
-            delete_url = 'https://blob.vercel-storage.com/delete'
-            
-            response = requests.post(
+            # Use the original blob_url (full URL) for deletion
+            response = requests.delete(
                 delete_url,
                 headers=headers,
-                json={'pathname': pathname},
+                json={'urls': [blob_url]},
                 timeout=10
             )
             
