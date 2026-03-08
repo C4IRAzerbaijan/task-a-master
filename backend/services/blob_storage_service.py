@@ -11,14 +11,13 @@ class BlobStorageService:
     
     def __init__(self, config):
         self.config = config
-        self.blob_enabled = os.getenv('BLOB_READ_WRITE_TOKEN', '') != ''
         self.blob_token = os.getenv('BLOB_READ_WRITE_TOKEN', '')
-        self.blob_api_url = 'https://blob.vercel-storage.com'
+        self.blob_enabled = self.blob_token != ''
         
         if self.blob_enabled:
-            print("✓ Vercel Blob Storage enabled")
+            print(f"✓ Vercel Blob Storage enabled (token: {self.blob_token[:20]}...)")
         else:
-            print("⚠️ Vercel Blob Storage disabled - using fallback")
+            print("⚠️ Vercel Blob Storage disabled - token not found")
     
     def upload_file(self, file_obj, filename: str) -> Tuple[bool, str]:
         """
@@ -26,42 +25,58 @@ class BlobStorageService:
         Returns: (success, blob_url_or_error_message)
         """
         if not self.blob_enabled:
-            return False, "Blob storage not configured"
+            return False, "Blob storage not configured - VERCEL_BLOB_TOKEN missing"
         
         try:
             # Read file content
             file_obj.seek(0)
             file_content = file_obj.read()
+            file_size = len(file_content)
             
-            # Prepare upload
+            print(f"📤 Uploading {filename} ({file_size} bytes) to Vercel Blob...")
+            
+            # Vercel Blob API - use the proper endpoint
+            # The token itself contains the URL, or we construct it properly
             headers = {
                 'Authorization': f'Bearer {self.blob_token}',
+                'Content-Type': 'application/octet-stream',
             }
             
-            files = {
-                'file': (filename, BytesIO(file_content), 'application/octet-stream'),
-            }
+            # Method 1: Direct upload to Vercel Blob API endpoint
+            url = 'https://blob.vercel-storage.com/upload'
             
-            # Upload to Vercel Blob
+            # Send as raw bytes with filename in header
+            headers['X-Vercel-Blob-Filename'] = filename
+            
             response = requests.post(
-                f'{self.blob_api_url}/upload',
+                url,
                 headers=headers,
-                files=files,
-                data={'filename': filename}
+                data=file_content,
+                timeout=30
             )
+            
+            print(f"📊 Vercel response: {response.status_code}")
             
             if response.status_code in (200, 201):
                 data = response.json()
                 blob_url = data.get('url', '')
+                if not blob_url:
+                    # Try alternate response format
+                    blob_url = data.get('pathname', '')
+                print(f"✅ Upload successful: {blob_url[:80]}...")
                 return True, blob_url
             else:
-                error = response.text
-                print(f"Blob upload error: {response.status_code} - {error}")
-                return False, f"Upload failed: {response.status_code}"
+                error_text = response.text[:200]
+                print(f"❌ Blob upload error: {response.status_code}")
+                print(f"   Response: {error_text}")
+                return False, f"Upload failed: {response.status_code} - {error_text}"
                 
         except Exception as e:
-            print(f"Blob service error: {str(e)}")
+            print(f"❌ Blob service error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False, str(e)
+    
     
     def delete_file(self, blob_url: str) -> bool:
         """Delete file from Vercel Blob Storage"""
@@ -69,19 +84,40 @@ class BlobStorageService:
             return False
         
         try:
+            # Vercel Blob delete endpoint
             headers = {
                 'Authorization': f'Bearer {self.blob_token}',
             }
             
-            response = requests.delete(
-                blob_url,
-                headers=headers
+            # Extract pathname from blob URL if it's a full URL
+            if blob_url.startswith('http'):
+                # blob_url is like: https://xxxx.public.blob.vercel-storage.com/path
+                # We need to send to delete endpoint with the pathname
+                from urllib.parse import urlparse
+                parsed = urlparse(blob_url)
+                pathname = parsed.path
+            else:
+                pathname = blob_url
+            
+            delete_url = 'https://blob.vercel-storage.com/delete'
+            
+            response = requests.post(
+                delete_url,
+                headers=headers,
+                json={'pathname': pathname},
+                timeout=10
             )
             
-            return response.status_code in (200, 204)
+            success = response.status_code in (200, 204)
+            if success:
+                print(f"✅ File deleted from Blob Storage")
+            else:
+                print(f"⚠️ Delete response: {response.status_code}")
+            return success
         except Exception as e:
-            print(f"Blob delete error: {str(e)}")
+            print(f"⚠️ Blob delete error: {str(e)}")
             return False
+    
     
     def download_file(self, blob_url: str) -> Optional[bytes]:
         """Download file content from Vercel Blob Storage"""
@@ -89,12 +125,16 @@ class BlobStorageService:
             return None
         
         try:
+            print(f"📥 Downloading from Blob: {blob_url[:60]}...")
             response = requests.get(blob_url, timeout=30)
             if response.status_code == 200:
+                print(f"✅ Downloaded {len(response.content)} bytes")
                 return response.content
-            return None
+            else:
+                print(f"⚠️ Download failed: {response.status_code}")
+                return None
         except Exception as e:
-            print(f"Blob download error: {str(e)}")
+            print(f"⚠️ Blob download error: {str(e)}")
             return None
     
     def get_file_stream(self, blob_url: str):
@@ -110,4 +150,3 @@ class BlobStorageService:
         except Exception as e:
             print(f"Blob stream error: {str(e)}")
             return None
-
