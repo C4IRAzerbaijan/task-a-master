@@ -2,6 +2,7 @@
 """Document management routes"""
 import os
 import uuid
+import io
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt, set_access_cookies
 from werkzeug.utils import secure_filename
@@ -9,7 +10,7 @@ from utils.auth import admin_required
 
 docs_bp = Blueprint('documents', __name__, url_prefix='/api/documents')
 
-def init_document_routes(db_manager, rag_service, config):
+def init_document_routes(db_manager, rag_service, config, blob_storage=None):
     """Initialize document routes"""
     
     @docs_bp.route('', methods=['GET'])
@@ -48,7 +49,7 @@ def init_document_routes(db_manager, rag_service, config):
     @jwt_required(locations=['cookies', 'headers'])
     @admin_required()
     def upload_document():
-        """Upload new document (admin only)"""
+        """Upload new document (admin only) - uses Vercel Blob Storage on production"""
         try:
             if 'file' not in request.files:
                 return jsonify({'error': 'Fayl seçilməyib'}), 400
@@ -73,32 +74,60 @@ def init_document_routes(db_manager, rag_service, config):
             if file_size > config.MAX_FILE_SIZE:
                 return jsonify({'error': f'Fayl çox böyükdür (max {config.MAX_FILE_SIZE // (1024*1024)}MB)'}), 400
             
-            # Save file
-            filename = secure_filename(file.filename)
-            unique_filename = f"{uuid.uuid4()}_{filename}"
-            file_path = os.path.join(config.UPLOAD_FOLDER, unique_filename)
-            
-            # Ensure upload folder exists
-            os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
-            
-            file.save(file_path)
-            
             # Get file type
+            filename = secure_filename(file.filename)
             file_type = processor.get_file_type(filename)
+            
+            # Determine storage method based on environment
+            is_vercel = os.getenv('VERCEL', '') == '1'
+            blob_url = None
+            local_file_path = None
+            
+            if is_vercel and blob_storage:
+                # Use Blob Storage on Vercel
+                unique_filename = f"{uuid.uuid4()}_{filename}"
+                success, result = blob_storage.upload_file(file, unique_filename)
+                
+                if not success:
+                    return jsonify({'error': f'Blob upload failed: {result}'}), 500
+                
+                blob_url = result
+                file_path_for_db = blob_url  # Store blob URL in database
+            else:
+                # Use local filesystem in development
+                unique_filename = f"{uuid.uuid4()}_{filename}"
+                local_file_path = os.path.join(config.UPLOAD_FOLDER, unique_filename)
+                
+                # Ensure upload folder exists
+                os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
+                file.save(local_file_path)
+                
+                file_path_for_db = local_file_path
             
             # Save to database
             user_id = get_jwt_identity()
             doc_id = db_manager.create_document(
                 filename=unique_filename,
                 original_name=filename,
-                file_path=file_path,
+                file_path=file_path_for_db,  # Either blob URL or local path
                 file_size=file_size,
                 file_type=file_type,
-                uploaded_by=user_id
+                uploaded_by=user_id,
+                is_blob_storage=bool(blob_url)  # Flag to indicate blob storage
             )
             
             # Process document with RAG
-            success = rag_service.process_document(file_path, doc_id)
+            # Pass the actual file content or path to RAG service
+            if blob_url:
+                # For blob storage, download to memory for processing
+                file_content = blob_storage.download_file(blob_url)
+                if file_content:
+                    success = rag_service.process_document_from_bytes(file_content, doc_id, filename)
+                else:
+                    success = False
+            else:
+                # For local storage, use file path directly
+                success = rag_service.process_document(file_path_for_db, doc_id)
             
             if success:
                 db_manager.update_document_processed(doc_id, True)
@@ -118,9 +147,9 @@ def init_document_routes(db_manager, rag_service, config):
             }), 201
             
         except Exception as e:
-            # Clean up file if error
-            if 'file_path' in locals() and os.path.exists(file_path):
-                os.remove(file_path)
+            # Clean up local file if error
+            if 'local_file_path' in locals() and local_file_path and os.path.exists(local_file_path):
+                os.remove(local_file_path)
             return jsonify({'error': f'Upload xətası: {str(e)}'}), 500
     
     @docs_bp.route('/<int:doc_id>', methods=['GET'])
@@ -167,9 +196,17 @@ def init_document_routes(db_manager, rag_service, config):
             if not doc:
                 return jsonify({'error': 'Sənəd tapılmadı'}), 404
             
-            # Delete file
-            if os.path.exists(doc['file_path']):
-                os.remove(doc['file_path'])
+            # Delete file based on storage type
+            is_blob = doc.get('is_blob_storage', False)
+            file_path = doc['file_path']
+            
+            if is_blob and blob_storage:
+                # Delete from Blob Storage
+                blob_storage.delete_file(file_path)
+            else:
+                # Delete local file
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             
             # Delete vector store
             rag_service.delete_document_vectors(doc_id)
@@ -196,14 +233,30 @@ def init_document_routes(db_manager, rag_service, config):
             if claims.get('role') != 'admin' and doc['uploaded_by'] != user_id:
                 return jsonify({'error': 'Access denied'}), 403
             
-            if not os.path.exists(doc['file_path']):
-                return jsonify({'error': 'Fayl tapılmadı'}), 404
+            file_path = doc['file_path']
+            is_blob = doc.get('is_blob_storage', False)
             
-            return send_file(
-                doc['file_path'],
-                as_attachment=True,
-                download_name=doc['original_name']
-            )
+            if is_blob and blob_storage:
+                # Download from Blob Storage
+                file_content = blob_storage.download_file(file_path)
+                if not file_content:
+                    return jsonify({'error': 'Fayl tapılmadı'}), 404
+                
+                return send_file(
+                    io.BytesIO(file_content),
+                    as_attachment=True,
+                    download_name=doc['original_name']
+                )
+            else:
+                # Download from local filesystem
+                if not os.path.exists(file_path):
+                    return jsonify({'error': 'Fayl tapılmadı'}), 404
+                
+                return send_file(
+                    file_path,
+                    as_attachment=True,
+                    download_name=doc['original_name']
+                )
             
         except Exception as e:
             return jsonify({'error': f'Download xətası: {str(e)}'}), 500
