@@ -126,6 +126,22 @@ def create_simple_app():
         print("🔄 Attempting to restore DB from Blob Storage...")
         blob_storage.sync_db_from_blob(config.DATABASE_FILE)
 
+        # contacts.db: read-only reference database for the phone-book feature.
+        # When running locally, push it to Blob Storage so Vercel can use it.
+        # When running on Vercel, restore it to /tmp/contacts.db.
+        _local_contacts = os.path.join(os.path.dirname(__file__), 'contacts.db')
+        _tmp_contacts = '/tmp/contacts.db'
+        _CONTACTS_BLOB_KEY = '_system/contacts.db'
+
+        if is_vercel:
+            # Vercel Lambda: restore from blob into /tmp
+            if not os.path.exists(_tmp_contacts):
+                blob_storage.sync_file_from_blob(_CONTACTS_BLOB_KEY, _tmp_contacts)
+        else:
+            # Local dev with blob enabled: upload contacts.db so Vercel can find it
+            if os.path.exists(_local_contacts):
+                blob_storage.sync_file_to_blob(_local_contacts, _CONTACTS_BLOB_KEY)
+
     db_manager = DatabaseManager(config.DATABASE_FILE)
     rag_service = EnhancedRAGServiceV2(config, db_manager)
     rag_service.blob_storage = blob_storage  # inject for ChromaDB persistence
