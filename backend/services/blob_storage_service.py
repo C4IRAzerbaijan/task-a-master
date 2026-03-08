@@ -43,7 +43,22 @@ class BlobStorageService:
             timeout=60,
         )
         if response.status_code in (200, 201):
-            return response.json().get('url', '')
+            try:
+                resp_data = response.json()
+            except Exception:
+                print(f"⚠️ Blob PUT: could not parse JSON response: {response.text[:200]}")
+                return None
+            print(f"📋 Blob PUT response keys: {list(resp_data.keys())}")
+            # Vercel may return 'url', 'downloadUrl', or neither when pathname is used
+            url = (
+                resp_data.get('url')
+                or resp_data.get('downloadUrl', '').split('?')[0]
+                or resp_data.get('pathname', '')
+            )
+            if url:
+                return url
+            print(f"⚠️ Blob PUT succeeded but no URL in response: {resp_data}")
+            return None
         print(f"⚠️ Blob PUT failed ({response.status_code}): {response.text[:200]}")
         return None
 
