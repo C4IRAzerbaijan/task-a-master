@@ -9,11 +9,9 @@ frontend/dist/
 *.pyc
 
 # Database & session files
-*.db
 *.sqlite3
 backend/chroma_db/
 backend/flask_session/
-backend/documents/
 backend/example_docs/
 
 # Environment & secrets
