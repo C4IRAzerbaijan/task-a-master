@@ -20,143 +20,113 @@ class EnhancedChatService:
         # Initialize improved document matcher
         self.document_matcher = ImprovedDocumentMatcher(db_manager)
         
-        # Template mappings
-        self.template_mappings = {
-            'məzuniyyət': {
-                'type': 'vacation',
-                'keywords': ['məzuniyyət', 'istirahət', 'tətil', 'vacation'],
-                'template_name': 'Məzuniyyət Ərizəsi'
-            },
-            'ezamiyyət': {
-                'type': 'business_trip', 
-                'keywords': ['ezamiyyət', 'ezamiyyet', 'səfər', 'komandirovka', 'business_trip', 'numun'],
-                'template_name': 'Ezamiyyət Ərizəsi'
-            },
-            'müqavilə': {
-                'type': 'contract',
-                'keywords': ['müqavilə', 'razılaşma', 'saziş', 'contract'],
-                'template_name': 'Müqavilə Şablonu'
-            },
-            'memorandum': {
-                'type': 'memorandum',
-                'keywords': ['memorandum', 'anlaşma', 'razılaşma'],
-                'template_name': 'Anlaşma Memorandumu'
-            }
+        # Download intent trigger words (Azerbaijani + English + common keyboard variants)
+        self._download_triggers = {
+            # template / sample
+            'şablon', 'sablon', 'template', 'nümunə', 'numune', 'numuna', 'numuye',
+            # download / send
+            'yüklə', 'yukle', 'yükle', 'download', 'göndər', 'gonder',
+            # get / obtain
+            'ver', 'al', 'əldə', 'elde', 'tap', 'paylaş', 'paylas',
+            # document / file
+            'fayl', 'faylı', 'file', 'sənəd', 'sened',
+            # need / want
+            'lazım', 'lazim', 'istəyirəm', 'isteyirem', 'isteyirem',
+            # link
+            'link',
         }
 
+    # ------------------------------------------------------------------
+    # Azerbaijani-aware text normalisation helpers
+    # ------------------------------------------------------------------
+    _AZ_MAP = str.maketrans('əçğıöüş', 'ecgious')
+
+    def _az_norm(self, text: str) -> str:
+        """Lowercase + replace Azerbaijani special chars with basic Latin."""
+        return text.lower().translate(self._AZ_MAP)
+
+    def _tokenize(self, text: str) -> List[str]:
+        """Split normalised text into tokens of length ≥ 2."""
+        return [t for t in re.split(r'[^a-z0-9]+', self._az_norm(text)) if len(t) >= 2]
+
+    # ------------------------------------------------------------------
+
     def find_template_by_keywords(self, question: str) -> Optional[Dict]:
-        """Find template document based on keywords in question - Enhanced for any şablon"""
-        question_lower = question.lower()
-        
-        # Check if this is a template download request
-        if not any(keyword in question_lower for keyword in ['nümunə', 'template', 'şablon', 'yüklə', 'download', 'link']):
+        """
+        Generic document-download matcher.
+        Detects download intent from the question, then scores ALL uploaded
+        documents by how well their names match the remaining question words.
+        Works for any document the admin uploads – no hardcoded mappings.
+        Returns: {'document': doc_dict, 'doc_display_name': str}  or  None
+        """
+        q_tokens = set(self._tokenize(question))
+        trigger_tokens = {self._az_norm(t) for t in self._download_triggers}
+
+        # 1. Bail out early if no download intent in the question
+        if not (q_tokens & trigger_tokens):
             return None
-        
-        # Get all template documents
+
+        # 2. Load all documents
         documents = self.db_manager.get_documents()
-        # Include documents that are marked as templates OR have template-like names
-        template_docs = [doc for doc in documents if (
-            doc.get('is_template') or 
-            any(keyword in doc['original_name'].lower() for keyword in ['template', 'şablon', 'numun', 'nümunə', 'ezamiyyt'])
-        )]
-        
-        if not template_docs:
+        if not documents:
             return None
-        
-        print(f"Found {len(template_docs)} template documents")
-        
-        # Extract keywords from the question (removing template request words)
-        template_request_words = ['nümunə', 'template', 'şablon', 'yüklə', 'download', 'link', 'ver', 'göndər', 'send']
-        question_words = [word for word in question_lower.split() if word not in template_request_words and len(word) > 2]
-        
-        print(f"Question keywords: {question_words}")
-        
-        # First try: exact matching with predefined mappings
-        for template_key, template_info in self.template_mappings.items():
-            if any(keyword in question_lower for keyword in template_info['keywords']):
-                # Look for template document in database
-                template_doc = None
-                for doc in template_docs:
-                    if (doc.get('document_type') == template_info['type'] or
-                        any(kw in doc['original_name'].lower() for kw in template_info['keywords'])):
-                        template_doc = doc
-                        break
-                
-                if template_doc:
-                    print(f"Found predefined template: {template_doc['original_name']}")
-                    return {
-                        'document': template_doc,
-                        'template_info': template_info
-                    }
-        
-        # Second try: flexible matching with any template document
-        best_match = None
+
+        # 3. Content tokens = question tokens minus trigger/stop words
+        stop_tokens = trigger_tokens | {
+            'bu', 'bir', 'de', 'da', 'ile', 've', 'mi', 'mu', 'bana',
+            'mene', 'lutfen', 'xahis', 'zehmet', 'olsa', 'olar',
+        }
+        content_tokens = {t for t in q_tokens if t not in stop_tokens and len(t) >= 2}
+
+        print(f"[Download] Content tokens: {content_tokens}")
+
+        # 4. Score every document by token overlap against its filename
+        best_doc = None
         best_score = 0
-        
-        for doc in template_docs:
+
+        for doc in documents:
+            doc_name = doc.get('original_name', '')
+            # Remove extension for matching, then tokenise
+            base_name = re.sub(r'\.[^.]+$', '', doc_name)
+            doc_tokens = set(self._tokenize(base_name))
+
             score = 0
-            doc_name_lower = doc['original_name'].lower()
-            doc_name_words = doc_name_lower.replace('.', ' ').replace('_', ' ').replace('-', ' ').split()
-            
-            # Score based on word matches
-            for q_word in question_words:
-                for d_word in doc_name_words:
-                    if len(q_word) > 2 and len(d_word) > 2:
-                        if q_word == d_word:
-                            score += 10  # Exact match
-                        elif q_word in d_word or d_word in q_word:
-                            score += 5   # Partial match
-                        elif self._are_similar_words(q_word, d_word):
-                            score += 3   # Similar words
-            
-            # Bonus for şablon/template in filename
-            if any(word in doc_name_lower for word in ['şablon', 'template', 'numune', 'nümunə']):
-                score += 2
-            
-            print(f"Template '{doc['original_name']}' scored: {score}")
-            
+            for qt in content_tokens:
+                for dt in doc_tokens:
+                    if qt == dt:
+                        score += 10          # exact normalised match
+                    elif qt in dt or dt in qt:
+                        score += 6           # substring match
+                    elif len(qt) >= 4 and len(dt) >= 4 and qt[:4] == dt[:4]:
+                        score += 3           # 4-char prefix match
+
+            print(f"  '{doc_name}' → score {score}")
+
             if score > best_score:
                 best_score = score
-                best_match = doc
-        
-        if best_match and best_score >= 3:  # Minimum threshold
-            print(f"Best template match: {best_match['original_name']} (score: {best_score})")
-            # Create generic template info
-            template_info = {
-                'type': best_match.get('document_type', 'template'),
-                'keywords': question_words,
-                'template_name': best_match['original_name'].replace('.docx', '').replace('.pdf', '').replace('_', ' ').title()
-            }
-            return {
-                'document': best_match,
-                'template_info': template_info
-            }
-        
-        print("No suitable template found")
+                best_doc = doc
+
+        # 5. If we have a winner above threshold, return it
+        if best_doc and best_score >= 6:
+            display_name = re.sub(r'\.[^.]+$', '', best_doc['original_name']).replace('_', ' ').replace('-', ' ')
+            print(f"✓ Download match: '{best_doc['original_name']}' (score {best_score})")
+            return {'document': best_doc, 'doc_display_name': display_name}
+
+        # 6. If intent is clear but no name matched, fall back to listing all docs
+        #    so the user can choose — but only if there's exactly one document
+        if len(documents) == 1:
+            doc = documents[0]
+            display_name = re.sub(r'\.[^.]+$', '', doc['original_name']).replace('_', ' ').replace('-', ' ')
+            return {'document': doc, 'doc_display_name': display_name}
+
+        print("✗ Download intent detected but no document matched")
         return None
-    
+
     def _are_similar_words(self, word1: str, word2: str) -> bool:
-        """Check if two words are similar (basic implementation)"""
+        """Check if two words are similar via Azerbaijani normalisation."""
         if len(word1) < 3 or len(word2) < 3:
             return False
-        
-        # Common word variations in Azerbaijani
-        variations = {
-            'müqavilə': ['muqavile', 'contract'],
-            'məzuniyyət': ['mezuniyyet', 'vacation'],
-            'ezamiyyət': ['ezamiyyet', 'business', 'trip','ezamiyet', 'ezamiyyt', 'ezamiyət'],
-            'memorandum': ['anlaşma', 'razılaşma'],
-            'telefon': ['phone', 'contact', 'əlaqə'],
-            'nümunə': ['numun', 'template', 'şablon']
-        }
-        
-        for key, variants in variations.items():
-            if (word1 == key and word2 in variants) or (word2 == key and word1 in variants):
-                return True
-            if word1 in variants and word2 in variants:
-                return True
-        
-        return False
+        return self._az_norm(word1) == self._az_norm(word2)
 
     def find_relevant_document(self, question: str, documents: List[Dict]) -> Optional[int]:
         """Find the most relevant document using improved matching algorithm"""
