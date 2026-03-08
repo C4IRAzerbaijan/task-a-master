@@ -81,7 +81,23 @@ def create_simple_app():
     @app.errorhandler(405)
     def handle_405(e):
         return jsonify({'error': 'Method not allowed', 'method': request.method, 'path': request.path}), 405
-    
+
+    @app.after_request
+    def sync_db_after_write(response):
+        """After any mutating request, persist the SQLite DB to Blob Storage."""
+        if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+            try:
+                from services.blob_storage_service import BlobStorageService as _BS
+                # blob_storage is captured as a closure – but it isn't defined yet at
+                # registration time, so we use a lazy lookup via the app context.
+                bs = app.extensions.get('blob_storage')
+                if bs and bs.blob_enabled:
+                    from config import get_config as _gc
+                    bs.sync_db_to_blob(_gc().DATABASE_FILE)
+            except Exception as _e:
+                print(f"⚠️ after_request DB sync error: {_e}")
+        return response
+
     # Create directories - use /tmp on Vercel (only writable directory)
     if is_vercel:
         os.makedirs('/tmp/documents', exist_ok=True)
@@ -99,17 +115,30 @@ def create_simple_app():
     from services.blob_storage_service import BlobStorageService
     
     config = get_config()
-    
+
+    # Initialize Blob Storage first so we can restore persisted state before
+    # anything else tries to use the database or vector stores
+    blob_storage = BlobStorageService(config)
+
+    # On Vercel every Lambda starts with an empty /tmp – restore the database
+    # from Blob Storage so document/user records survive across invocations
+    if blob_storage.blob_enabled:
+        print("🔄 Attempting to restore DB from Blob Storage...")
+        blob_storage.sync_db_from_blob(config.DATABASE_FILE)
+
     db_manager = DatabaseManager(config.DATABASE_FILE)
     rag_service = EnhancedRAGServiceV2(config, db_manager)
-    
+    rag_service.blob_storage = blob_storage  # inject for ChromaDB persistence
+
     # ENHANCE RAG SERVICE WITH CONTACT DB SEARCH
     rag_service = enhance_rag_with_contact_search(rag_service)
-    
-    # Initialize Blob Storage Service for Vercel
-    blob_storage = BlobStorageService(config)
+    if not hasattr(rag_service, 'blob_storage'):
+        rag_service.blob_storage = blob_storage  # re-attach after wrapping
     
     chat_service = EnhancedChatService(db_manager, rag_service, config)
+
+    # Register blob_storage in app.extensions so the after_request hook can find it
+    app.extensions['blob_storage'] = blob_storage
 
     app = integrate_hr_handler(app, db_manager, rag_service, chat_service)
 
@@ -577,13 +606,12 @@ Linkə klikləyərək şablonu kompüterinizə yükləyə bilərsiniz."""
             filename = secure_filename(file.filename)
             unique_filename = f"{uuid.uuid4()}_{filename}"
             
-            # Determine storage method
-            is_vercel = os.getenv('VERCEL', '') == '1'
+            # Determine storage method: use Blob when available, local filesystem otherwise
             blob_url = None
             file_path = None
             is_blob = False
             
-            if is_vercel and blob_storage and blob_storage.blob_enabled:
+            if blob_storage and blob_storage.blob_enabled:
                 # Use Vercel Blob Storage
                 print("Using Vercel Blob Storage")
                 file.seek(0)
