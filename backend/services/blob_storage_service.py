@@ -237,6 +237,54 @@ class BlobStorageService:
             return False
 
     # ------------------------------------------------------------------ #
+    #  Generic file sync (for any static DB, e.g. contacts.db)          #
+    # ------------------------------------------------------------------ #
+
+    def sync_file_to_blob(self, local_path: str, blob_key: str) -> bool:
+        """Upload any local file to Blob Storage under the given key."""
+        if not self.blob_enabled:
+            return False
+        if not os.path.exists(local_path):
+            print(f"⚠️ sync_file_to_blob skipped – not found: {local_path}")
+            return False
+        try:
+            self._delete_by_prefix(blob_key)
+            with open(local_path, 'rb') as f:
+                data = f.read()
+            url = self._put(blob_key, data, add_random_suffix=False)
+            if url:
+                print(f"🔄 {os.path.basename(local_path)} synced to Blob ({len(data)} bytes)")
+                return True
+            return False
+        except Exception as e:
+            print(f"⚠️ sync_file_to_blob error: {e}")
+            return False
+
+    def sync_file_from_blob(self, blob_key: str, local_path: str) -> bool:
+        """Download a file from Blob Storage to local_path."""
+        if not self.blob_enabled:
+            return False
+        try:
+            blobs = self._list_blobs(blob_key)
+            if not blobs:
+                print(f"📋 No remote backup found for {blob_key}")
+                return False
+            blob_url = blobs[0]['url']
+            headers = {'Authorization': f'Bearer {self.blob_token}'}
+            response = requests.get(blob_url, headers=headers, timeout=30)
+            if response.status_code != 200:
+                print(f"⚠️ sync_file_from_blob download failed: {response.status_code}")
+                return False
+            os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)
+            with open(local_path, 'wb') as f:
+                f.write(response.content)
+            print(f"🔄 {os.path.basename(local_path)} restored from Blob ({len(response.content)} bytes)")
+            return True
+        except Exception as e:
+            print(f"⚠️ sync_file_from_blob error: {e}")
+            return False
+
+    # ------------------------------------------------------------------ #
     #  Persistence sync – ChromaDB vector stores                         #
     # ------------------------------------------------------------------ #
 
