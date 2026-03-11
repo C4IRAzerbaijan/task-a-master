@@ -91,8 +91,10 @@ class ContactService:
                 current_contact['name'] = line.split(':', 1)[1].strip() if ':' in line else line
             elif any(x in line.lower() for x in ['vəzifə:', 'position:', 'title:']):
                 current_contact['position'] = line.split(':', 1)[1].strip() if ':' in line else line
-            elif any(x in line.lower() for x in ['şöbə:', 'department:', 'bölmə:']):
+            elif any(x in line.lower() for x in ['şöbə:', 'department:', 'bölmə:', 'departament:']):
                 current_contact['department'] = line.split(':', 1)[1].strip() if ':' in line else line
+            elif any(x in line.lower() for x in ['sektor:', 'sector:']):
+                current_contact['sector'] = line.split(':', 1)[1].strip() if ':' in line else line
             elif any(x in line.lower() for x in ['mobil:', 'mobile:', 'cib:']):
                 current_contact['mobile'] = line.split(':', 1)[1].strip() if ':' in line else line
             elif any(x in line.lower() for x in ['daxili:', 'extension:', 'ext:']):
@@ -134,6 +136,9 @@ class ContactService:
             
             if 'department' in contact:
                 formatted += f"   🏢 Şöbə: {contact['department']}\n"
+            
+            if 'sector' in contact:
+                formatted += f"   📋 Sektor: {contact['sector']}\n"
             
             if 'phone' in contact:
                 formatted += f"   ☎️ Telefon: {contact['phone']}\n"
