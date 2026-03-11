@@ -29,7 +29,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
         general_keywords = [
             'Hamı', 'Bütün', 'Kim', 'Siyahı', 'Telefon', 'Nömrə', 'Məlumat', 
             'Nazir', 'Müdir', 'Rəis', 'Sədr', 'Direktor',
-            'Şöbə', 'İdarə', 'Sektor', 'Bölmə', 'Departament', 'Xidmət',
+            'Şöbə', 'İdarə', 'Sektor', 'Bölmə', 'Şöbə', 'Xidmət',
             'Mütəxəssis', 'Məsləhətçi', 'Ekspert', 'Mühasib', 'Mühəndis',
             'Auditor', 'Müfəttiş', 'Köməkçi', 'Müşavir', 'Hüquqşünas',
             'Koordinator', 'Menecer', 'Katib', 'Qeydiyyatçı', 'Referent',
@@ -57,15 +57,55 @@ def enhance_rag_with_contact_search(rag_service_instance):
             types.append('Şəhər')
         if 'vəzifə' in q or 'işi' in q or 'məsul' in q:
             types.append('Vəzifə')
+        if 'şöbə' in q or 'departament' in q:
+            types.append('Şöbə')
+        if 'sektor' in q or 'bölüm' in q:
+            types.append('Sektor')
+        if 'mail' in q or 'email' in q:
+            types.append('Email')
         if not types:
-            types = ['Ad', 'Soyad', 'Vəzifə', 'Mobil', 'Daxili', 'Şəhər']
+            types = ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']
         return types
 
     def _is_list_query(question: str) -> bool:
         """Check if user wants a list of people"""
         q = question.lower()
-        list_keywords = ['siyahı', 'list', 'hamı', 'bütün', 'neçə', 'kim var', 'kimdir', 'kimləri']
+        list_keywords = ['siyahı', 'list', 'hamı', 'bütün', 'neçə', 'kim var', 'kimdir', 'kimləri', 'işləyən', 'çalışan']
         return any(keyword in q for keyword in list_keywords)
+    
+    def _extract_department_or_sector(question: str) -> tuple:
+        """Extract department or sector name from question (departmentində işləyən işçilər pattern)"""
+        q = question.lower()
+        department = None
+        sector = None
+        
+        # Match patterns like "xxx departmentində işləyən" or "xxx departmentinda işləyən"
+        dept_match = re.search(r'(.+?)\s+departmentində', q)
+        if not dept_match:
+            dept_match = re.search(r'(.+?)\s+departmentinda', q)
+        if dept_match:
+            department = dept_match.group(1).strip()
+        
+        # Match patterns like "xxx sektorda işləyən" or "xxx sektarında işləyən" (including typos)
+        # This handles multi-word sectors like "Kadr siyasəti sektarında"
+        sector_match = re.search(r'(.+?)\s+sektor[a-zıouəəəəə]*(?:nda|nə|da|də)?(?:\s+|$)', q)
+        if not sector_match:
+            # Specific match for "sektarında" variant (typo)
+            sector_match = re.search(r'(.+?)\s+sektarında', q)
+        if not sector_match:
+            # Match "sektorda" variant
+            sector_match = re.search(r'(.+?)\s+sektorda', q)
+        if not sector_match:
+            # Fallback: "sektor" keyword followed by name
+            sector_match = re.search(r'sektor[a-z]*\s+(?:işləyən\s+)?(.+?)(?:\s+|$)', q)
+        if not sector_match:
+            # Another pattern: sector name at end with "sektoru"
+            sector_match = re.search(r'(.+?)\s+sektoru(?:\s+|$)', q)
+        
+        if sector_match:
+            sector = sector_match.group(1).strip()
+        
+        return department, sector
 
     def _search_multiple_contacts(conn, name_part: str, info_types: list) -> list:
         """Search for multiple contacts with partial name matching"""
@@ -73,7 +113,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
         
         # Search by partial name in both Ad and Soyad
         cur.execute(
-            """SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts
+            """SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts
                WHERE lower(Ad) LIKE ? OR lower(Soyad) LIKE ?
                ORDER BY Ad, Soyad""",
             (f'%{name_part.lower()}%', f'%{name_part.lower()}%')
@@ -90,12 +130,70 @@ def enhance_rag_with_contact_search(rag_service_instance):
             
             if not parts:
                 # Show all available info if specific type not found
-                for key in ['Ad', 'Soyad', 'Vəzifə', 'Mobil', 'Daxili', 'Şəhər']:
+                for key in ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']:
                     if row[key] and row[key] != 'yoxdur':
                         parts.append(f"{key}: {row[key]}")
             
             contact_info = f"**{row['Ad']} {row['Soyad']}**\n" + "\n".join(parts)
             results.append(contact_info)
+        
+        return results
+    
+    def _search_by_department_or_sector(conn, department: str = None, sector: str = None, info_types: list = None) -> list:
+        """Search for contacts by department/office or sector"""
+        if not info_types:
+            info_types = ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']
+        
+        cur = conn.cursor()
+        results = []
+        
+        if department:
+            # Search by department (Şöbə column)
+            cur.execute(
+                """SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts
+                   WHERE lower(Şöbə) LIKE ? OR lower(Şöbə) LIKE ?
+                   ORDER BY Ad, Soyad""",
+                (f'%{department.lower()}%', f'%{department.lower()}%')
+            )
+            rows = cur.fetchall()
+            
+            for row in rows:
+                parts = []
+                for key in info_types:
+                    if key in row.keys() and row[key] and row[key] != 'yoxdur':
+                        parts.append(f"{key}: {row[key]}")
+                
+                if not parts:
+                    for key in ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']:
+                        if row[key] and row[key] != 'yoxdur':
+                            parts.append(f"{key}: {row[key]}")
+                
+                contact_info = f"**{row['Ad']} {row['Soyad']}**\n" + "\n".join(parts)
+                results.append(contact_info)
+        
+        elif sector:
+            # Search by sector
+            cur.execute(
+                """SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts
+                   WHERE lower(Sektor) LIKE ?
+                   ORDER BY Ad, Soyad""",
+                (f'%{sector.lower()}%',)
+            )
+            rows = cur.fetchall()
+            
+            for row in rows:
+                parts = []
+                for key in info_types:
+                    if key in row.keys() and row[key] and row[key] != 'yoxdur':
+                        parts.append(f"{key}: {row[key]}")
+                
+                if not parts:
+                    for key in ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']:
+                        if row[key] and row[key] != 'yoxdur':
+                            parts.append(f"{key}: {row[key]}")
+                
+                contact_info = f"**{row['Ad']} {row['Soyad']}**\n" + "\n".join(parts)
+                results.append(contact_info)
         
         return results
 
@@ -105,11 +203,45 @@ def enhance_rag_with_contact_search(rag_service_instance):
         contact_keywords = [
             'telefon', 'nömrə', 'mobil', 'daxili', 'şəhər', 'əlaqə', 'kimin',
             'işçi', 'əməkdaş', 'siyahı', 'list', 'hamı', 'bütün', 'vəzifə', 'müdir',
-            'mütəxəssis', 'məsləhətçi', 'rəis', 'baş', 'çıxart', 'göstər', 'tap'
+            'mütəxəssis', 'məsləhətçi', 'rəis', 'baş', 'çıxart', 'göstər', 'tap',
+            'şöbə', 'departament', 'sektor', 'bölüm', 'işləyən', 'çalışan', 'email', 'mail'
         ]
         
         if any(k in lower_q for k in contact_keywords):
             print(f"🔍 Contact query detected: {question}")
+            
+            # Check for department/sector search
+            department, sector = _extract_department_or_sector(question)
+            
+            if department or sector:
+                print(f"🏢 Department/Sector query: department={department}, sector={sector}")
+                if not db_path or not os.path.exists(db_path):
+                    return {'answer': f'contacts.db tapılmadı. Checked paths: {possible_paths}'}
+                
+                try:
+                    conn = sqlite3.connect(db_path)
+                    conn.row_factory = sqlite3.Row
+                    info_types = _detect_info_type(question)
+                    
+                    results = _search_by_department_or_sector(conn, department, sector, info_types)
+                    conn.close()
+                    
+                    if not results:
+                        dept_or_sect = department or sector
+                        return {'answer': f'"{dept_or_sect}" şöbə/sektorda heç bir əməkdaş tapılmadı.'}
+                    
+                    # Format multiple results
+                    if len(results) == 1:
+                        answer = results[0]
+                    else:
+                        answer = f"**{len(results)} əməkdaş tapıldı:**\n\n" + "\n\n".join(results)
+                    
+                    print(f"Department/Sector contacts found: {len(results)}")
+                    return {'answer': answer}
+                    
+                except Exception as e:
+                    print(f"Database error: {e}")
+                    return {'answer': f'Verilənlər bazası xətası: {str(e)}'}
             
             # Check if this is a list query (multiple results)
             is_list_query = _is_list_query(question)
@@ -162,7 +294,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                     if 'nazir müavin' in lower_q or 'nazir müavini' in lower_q:
                         # Specifically search for deputy ministers
                         cur.execute(
-                            "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts "
+                            "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts "
                             "WHERE lower(Vəzifə) LIKE '%nazir müavini%' OR lower(Vəzifə) LIKE '%nazir müavin%' "
                             "OR lower(Vəzifə) LIKE '%nazirin müavini%' OR lower(Vəzifə) LIKE '%nazirin müavin%' "
                             "ORDER BY Ad, Soyad"
@@ -170,7 +302,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                     elif 'müdir müavin' in lower_q or 'müdir müavini' in lower_q:
                         # Specifically search for deputy directors
                         cur.execute(
-                            "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts "
+                            "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts "
                             "WHERE lower(Vəzifə) LIKE '%müdir müavini%' OR lower(Vəzifə) LIKE '%müdir müavin%' "
                             "ORDER BY Ad, Soyad"
                         )
@@ -187,7 +319,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                             conditions.append("lower(Vəzifə) LIKE ?")
                             params.append(f'%{term}%')
                         
-                        query_sql = f"SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts WHERE {' OR '.join(conditions)} ORDER BY Ad, Soyad"
+                        query_sql = f"SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts WHERE {' OR '.join(conditions)} ORDER BY Ad, Soyad"
                         cur.execute(query_sql, params)
                     rows = cur.fetchall()
                     
@@ -199,7 +331,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                                 parts.append(f"{key}: {row[key]}")
                         
                         if not parts:
-                            for key in ['Ad', 'Soyad', 'Vəzifə', 'Mobil', 'Daxili', 'Şəhər']:
+                            for key in ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']:
                                 if row[key] and row[key] != 'yoxdur':
                                     parts.append(f"{key}: {row[key]}")
                         
@@ -209,7 +341,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                 # Handle general "all contacts" searches
                 elif general_search and not name:
                     cur.execute(
-                        "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts ORDER BY Ad, Soyad"
+                        "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts ORDER BY Ad, Soyad"
                     )
                     rows = cur.fetchall()
                     results = []
@@ -221,7 +353,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                                 parts.append(f"{key}: {row[key]}")
                         
                         if not parts:
-                            for key in ['Ad', 'Soyad', 'Vəzifə', 'Mobil', 'Daxili', 'Şəhər']:
+                            for key in ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']:
                                 if row[key] and row[key] != 'yoxdur':
                                     parts.append(f"{key}: {row[key]}")
                         
@@ -244,7 +376,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                         if soyad:
                             # Try Ad=first, Soyad=second (e.g., "Anar Axundov")
                             cur.execute(
-                                "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts"
+                                "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts"
                                 " WHERE lower(Ad)=? AND lower(Soyad)=?",
                                 (ad.lower(), soyad.lower())
                             )
@@ -253,7 +385,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                             # If not found, try Ad=second, Soyad=first (e.g., "Axundov Anar")
                             if not row:
                                 cur.execute(
-                                    "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts"
+                                    "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts"
                                     " WHERE lower(Ad)=? AND lower(Soyad)=?",
                                     (soyad.lower(), ad.lower())
                                 )
@@ -261,7 +393,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                         else:
                             # Search by single name in both Ad and Soyad columns
                             cur.execute(
-                                "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts"
+                                "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts"
                                 " WHERE lower(Ad)=? OR lower(Soyad)=?",
                                 (ad.lower(), ad.lower())
                             )
@@ -271,13 +403,13 @@ def enhance_rag_with_contact_search(rag_service_instance):
                         if not row:
                             if soyad:
                                 cur.execute(
-                                    "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts"
+                                    "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts"
                                     " WHERE lower(Ad) LIKE ? OR lower(Soyad) LIKE ? OR lower(Ad) LIKE ? OR lower(Soyad) LIKE ?",
                                     (f'%{ad.lower()}%', f'%{soyad.lower()}%', f'%{soyad.lower()}%', f'%{ad.lower()}%')
                                 )
                             else:
                                 cur.execute(
-                                    "SELECT Ad, Soyad, Vəzifə, Mobil, Daxili, Şəhər FROM contacts"
+                                    "SELECT Ad, Soyad, Vəzifə, Şöbə, Sektor, Mobil, Daxili, Şəhər, Email FROM contacts"
                                     " WHERE lower(Ad) LIKE ? OR lower(Soyad) LIKE ?",
                                     (f'%{ad.lower()}%', f'%{ad.lower()}%')
                                 )
@@ -296,7 +428,7 @@ def enhance_rag_with_contact_search(rag_service_instance):
                         if not parts:
                             # Show all available info if specific type not found
                             parts = []
-                            for key in ['Ad', 'Soyad', 'Vəzifə', 'Mobil', 'Daxili', 'Şəhər']:
+                            for key in ['Ad', 'Soyad', 'Vəzifə', 'Şöbə', 'Sektor', 'Mobil', 'Daxili', 'Şəhər', 'Email']:
                                 if row[key] and row[key] != 'yoxdur':
                                     parts.append(f"{key}: {row[key]}")
                         
